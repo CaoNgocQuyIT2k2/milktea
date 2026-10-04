@@ -4,6 +4,7 @@ export interface Vec { x: number; y: number }
 export interface QueueCustomer {
   id: string;
   name: string;
+  requestedSize?: "Nhỏ" | "Vừa" | "Lớn";
   requestedToppings?: string[];
   requestedSweetness?: "0%" | "30%" | "50%" | "70%" | "100%";
   color: string;
@@ -31,6 +32,8 @@ export interface ShopGameState {
   missed: number;
   dailyTarget: number;
   dayComplete: boolean;
+  shiftRemaining?: number;
+  gameDay?: number;
   notice: string;
 }
 
@@ -55,16 +58,56 @@ export function nearestCustomer(state: ShopGameState): QueueCustomer | null {
 
 export function distance(a: Vec, b: Vec) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
+/** Walk to the customer, collect once, then return to deliver only a finished cup. */
+export function autoService(state: ShopGameState, dt: number): ShopGameState {
+  if (state.dayComplete) return state;
+  const customer = state.customers.find((c) => c.id === state.preparedOrderId && c.state === "waiting")
+    ?? state.customers.find((c) => c.state === "waiting");
+  const target = state.preparedOrderId && !state.orderPrepared ? { x: 470, y: 306 }
+    : customer ?? { x: 640, y: 310 };
+  let next = distance(state.player, target) > 8 ? movePlayer(state, target.x - state.player.x, target.y - state.player.y, dt) : state;
+  if (customer && distance(next.player, customer) <= 12) {
+    if (!next.preparedOrderId) next = collectOrder(next, customer.id);
+    else if (next.orderPrepared && next.preparedOrderId === customer.id) next = serveOrder(next, customer.id);
+  }
+  return next;
+}
+
+/** Customers order and receive cups directly across the first-person counter. */
+export function counterService(state: ShopGameState): ShopGameState {
+  if (state.dayComplete) return state;
+  const customer = state.customers.find(c => c.id === state.preparedOrderId && c.state === "waiting")
+    ?? state.customers.find(c => c.state === "waiting");
+  if (!customer) return state;
+  if (!state.preparedOrderId) return collectOrder(state, customer.id);
+  if (state.orderPrepared) return serveOrder(state, customer.id);
+  return state;
+}
+
+export function teaBaseForProduct(id: string): string {
+  const bases: Record<string,string> = { matcha: "Matcha", peach: "Trà đào cam sả", lemon: "Trà chanh mật ong", taro: "Khoai môn", "brown-sugar": "Sữa tươi đường đen", strawberry: "Dâu sữa", cocoa: "Cacao" };
+  return bases[id] ?? "Trà đen";
+}
+
+export function recipeMatches(customer: QueueCustomer, teaBase: string, sweetness: string, toppings: string[], cupSize?: string): boolean {
+  const requested = customer.requestedToppings ?? [];
+  return (cupSize === undefined || cupSize === (customer.requestedSize ?? "Vừa")) && teaBase === teaBaseForProduct(customer.productId) && sweetness === (customer.requestedSweetness ?? "50%")
+    && toppings.length === requested.length && requested.every((name) => toppings.includes(name));
+}
+
 export function spawnCustomer(state: ShopGameState, random = Math.random): ShopGameState {
   if (state.customers.filter((c) => c.state === "waiting" || c.state === "arriving").length >= 3) return state;
   const product = PRODUCTS[Math.floor(random() * PRODUCTS.length)];
   const id = `guest-${Date.now().toString(36)}-${Math.floor(random() * 1_000_000).toString(36)}`;
   const activeCount = state.customers.filter((c) => c.state === "waiting" || c.state === "arriving").length;
   const spawn = spawnPoints[Math.floor(random() * spawnPoints.length)];
-  const queue = queuePoints[Math.min(activeCount, queuePoints.length - 1)];
+  const queue = queuePoints.find(point => !state.customers.some(c =>
+    (c.state === "waiting" || c.state === "arriving") && c.targetX === point.x))
+    ?? queuePoints[Math.min(activeCount, queuePoints.length - 1)];
   const customer: QueueCustomer = {
     id, name: guestNames[Math.floor(random() * guestNames.length)], color: guestColors[Math.floor(random() * guestColors.length)],
-    requestedToppings: product.id === "classic" || product.id === "brown-sugar" ? ["Trân châu đen"] : product.id === "matcha" ? ["Kem cheese"] : product.id === "peach" ? ["Thạch trái cây"] : product.id === "taro" ? ["Trân châu trắng"] : [],
+    requestedToppings: product.id === "classic" || product.id === "brown-sugar" ? ["Trân châu đen"] : product.id === "matcha" ? ["Kem cheese"] : product.id === "peach" ? ["Thạch trái cây"] : product.id === "taro" ? ["Trân châu trắng"] : product.id === "cocoa" ? ["Oreo"] : product.id === "strawberry" ? ["Nha đam"] : [],
+    requestedSize: (["Nhỏ", "Vừa", "Lớn"] as const)[Math.floor(random() * 3)],
     requestedSweetness: (["30%", "50%", "70%"] as const)[Math.floor(random() * 3)],
     productId: product.id, patience: 100, x: spawn.x, y: spawn.y, targetX: queue.x, targetY: queue.y,
     state: "arriving", phase: random() * Math.PI * 2,
@@ -110,10 +153,11 @@ export function tickGame(state: ShopGameState, dt: number): ShopGameState {
   const brewCycle = brewTravel >= 100 ? 1 : 0;
   const brewHolding = state.brewHolding;
   const orderPrepared = state.orderPrepared;
-  const dayComplete = state.dayComplete || state.served >= state.dailyTarget;
+  const shiftRemaining = state.shiftRemaining === undefined ? undefined : Math.max(0, state.shiftRemaining - dtStep);
+  const dayComplete = state.dayComplete || (shiftRemaining === undefined ? state.served >= state.dailyTarget : shiftRemaining <= 0);
   const notice = newlyAngry > 0 ? `${customers.find((customer) => customer.state === "angry")?.name ?? "Khách"} hết kiên nhẫn và đã rời đi.`
     : dayComplete && !state.dayComplete ? `Đã đủ ${state.dailyTarget} đơn hôm nay! Tiệm đóng cửa, ngày làm việc kết thúc.` : state.notice;
-  return { ...state, customers: cleaned, missed: state.missed + newlyAngry, brewProgress, brewTravel, brewCycle, brewHolding, orderPrepared, dayComplete, notice };
+  return { ...state, shiftRemaining, customers: cleaned, missed: state.missed + newlyAngry, brewProgress, brewTravel, brewCycle, brewHolding, orderPrepared, dayComplete, notice };
 }
 
 export function movePlayer(state: ShopGameState, dx: number, dy: number, dt: number): ShopGameState {
@@ -155,7 +199,7 @@ export function serveOrder(state: ShopGameState, customerId: string): ShopGameSt
   if (!customer || state.preparedOrderId !== customerId || !state.orderPrepared) return state;
   const reward = gameProduct(customer.productId).price;
   const served = state.served + 1;
-  const dayComplete = served >= state.dailyTarget;
+  const dayComplete = state.shiftRemaining === undefined ? served >= state.dailyTarget : state.shiftRemaining <= 0;
   return {
     ...state, coins: state.coins + reward, served, dayComplete, preparedOrderId: null, orderPrepared: false, brewProgress: 0, brewHolding: false,
     customers: state.customers.map((c) => c.id === customerId ? { ...c, state: "served" as const } : c),

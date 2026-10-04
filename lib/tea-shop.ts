@@ -36,6 +36,8 @@ export const PRODUCTS: TeaProduct[] = [
   { id: "brown-sugar", name: "Sữa tươi đường đen", description: "Sữa tươi lạnh, đường đen nấu thủ công và trân châu.", price: 45000, category: "Đặc biệt", emoji: "🥛", popular: true, active: true, stock: 16 },
   { id: "taro", name: "Trà sữa khoai môn", description: "Khoai môn thơm bùi hòa cùng nền trà sữa dịu nhẹ.", price: 36000, category: "Trà sữa", emoji: "🟣", active: true, stock: 14 },
   { id: "lemon", name: "Trà chanh mật ong", description: "Trà xanh, chanh tươi và mật ong nguyên chất.", price: 29000, category: "Trà trái cây", emoji: "🍋", active: true, stock: 22 },
+  { id: "strawberry", name: "Trà sữa dâu", description: "Dâu thơm ngọt hòa cùng sữa mịn.", price: 38000, category: "Trà sữa", emoji: "🍓", active: true, stock: 20 },
+  { id: "cocoa", name: "Trà sữa cacao", description: "Cacao thơm đậm và sữa béo dịu.", price: 39000, category: "Trà sữa", emoji: "🍫", active: true, stock: 20 },
 ];
 
 export const TOPPINGS = [

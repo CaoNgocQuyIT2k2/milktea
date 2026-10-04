@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import Providers from "./Providers";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"], display: "swap" });
+const uiFont = localFont({
+  src: [{ path: "../public/fonts/Nunito.ttf", weight: "200 1000", style: "normal" }],
+  variable: "--font-ui",
+  display: "swap",
+});
 
 
 export const metadata: Metadata = {
@@ -15,7 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="vi"
-      className={`${geistSans.variable} h-full antialiased`}
+      className={`${uiFont.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         <Providers>{children}</Providers>

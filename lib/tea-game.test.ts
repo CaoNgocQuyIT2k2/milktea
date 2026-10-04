@@ -1,7 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { collectOrder, makeInitialGame, movePlayer, prepareOrder, serveOrder, spawnCustomer, tickGame } from "./tea-game";
+import { autoService, counterService, collectOrder, makeInitialGame, movePlayer, prepareOrder, recipeMatches, serveOrder, spawnCustomer, tickGame } from "./tea-game";
 
 describe("tea shop game loop", () => {
+  it("requires the taro ingredient for a taro milk tea order", () => {
+    const customer = { ...tickGame(spawnCustomer(makeInitialGame(), () => 0), 20).customers[0], productId: "taro", requestedToppings: ["Trân châu trắng"] };
+    expect(recipeMatches(customer, "Khoai môn", customer.requestedSweetness!, ["Trân châu trắng"])).toBe(true);
+    expect(recipeMatches(customer, "Trà đen", customer.requestedSweetness!, ["Trân châu trắng"])).toBe(false);
+  });
+  it("receives at the counter and credits a sealed cup exactly once", () => {
+    const waiting = tickGame(spawnCustomer(makeInitialGame(), () => 0), 20);
+    const received = counterService(waiting);
+    expect(received.preparedOrderId).toBe(waiting.customers[0].id);
+    expect(counterService(received).served).toBe(0);
+    const served = counterService({ ...received, orderPrepared: true });
+    expect(served.served).toBe(1);
+    expect(counterService(served).coins).toBe(served.coins);
+  });
+
+  it("rejects the wrong cup size and accepts the requested size", () => {
+    const customer = tickGame(spawnCustomer(makeInitialGame(), () => 0), 20).customers[0];
+    expect(customer.requestedSize).toBe("Nhỏ");
+    expect(recipeMatches(customer, "Trà đen", customer.requestedSweetness!, ["Trân châu đen"], "Lớn")).toBe(false);
+    expect(recipeMatches(customer, "Trà đen", customer.requestedSweetness!, ["Trân châu đen"], "Nhỏ")).toBe(true);
+  });
+  it("collects only on arrival and delivers a finished cup exactly once", () => {
+    const waiting = tickGame(spawnCustomer(makeInitialGame(), () => .2), 20);
+    const customer = waiting.customers[0];
+    expect(autoService(waiting, 0).preparedOrderId).toBeNull();
+    const received = autoService({ ...waiting, player: { x: customer.x, y: customer.y } }, 0);
+    expect(received.preparedOrderId).toBe(customer.id);
+    expect(autoService(received, 0).served).toBe(0);
+    const prepared = { ...received, orderPrepared: true, player: { x: 470, y: 306 } };
+    expect(autoService(prepared, .05).player.x).toBeGreaterThan(470);
+    expect(autoService(prepared, 0).served).toBe(0);
+    const served = autoService({ ...prepared, player: { x: customer.x, y: customer.y } }, 0);
+    expect(served.served).toBe(1);
+    expect(autoService(served, 0).coins).toBe(served.coins);
+  });
+
+  it("validates the actual selected recipe including missing and extra toppings", () => {
+    const customer = tickGame(spawnCustomer(makeInitialGame(), () => 0), 20).customers[0];
+    expect(recipeMatches(customer, "Trà đen", customer.requestedSweetness!, ["Trân châu đen"])).toBe(true);
+    expect(recipeMatches(customer, "Matcha", customer.requestedSweetness!, ["Trân châu đen"])).toBe(false);
+    expect(recipeMatches(customer, "Trà đen", "100%", ["Trân châu đen"])).toBe(false);
+    expect(recipeMatches(customer, "Trà đen", customer.requestedSweetness!, [])).toBe(false);
+    expect(recipeMatches(customer, "Trà đen", customer.requestedSweetness!, ["Trân châu đen", "Kem cheese"])).toBe(false);
+  });
+
   it("spawns customers and advances them into the queue", () => {
     const spawned = spawnCustomer(makeInitialGame(), () => 0.2);
     expect(spawned.customers).toHaveLength(1);
